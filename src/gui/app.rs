@@ -599,41 +599,46 @@ impl OmpSyncApp {
             .rounding(6.0)
             .inner_margin(6.0)
             .show(ui, |ui| {
-                egui::ScrollArea::vertical().max_height(height).show(ui, |ui| {
-                    // Header
-                    ui.horizontal(|ui| {
-                        ui.allocate_ui(Vec2::new(30.0, 20.0), |ui| { ui.label(""); });
-                        ui.allocate_ui(Vec2::new(180.0, 20.0), |ui| { ui.label(RichText::new("Skill 名称").strong()); });
-                        ui.allocate_ui(Vec2::new(260.0, 20.0), |ui| { ui.label(RichText::new("功能描述").strong()); });
-                        ui.allocate_ui(Vec2::new(140.0, 20.0), |ui| { ui.label(RichText::new("本地状态").strong()); });
-                        ui.allocate_ui(Vec2::new(140.0, 20.0), |ui| { ui.label(RichText::new("云端状态").strong()); });
-                        ui.allocate_ui(Vec2::new(140.0, 20.0), |ui| { ui.label(RichText::new("单个操作").strong()); });
-                    });
-                    ui.separator();
-
+                egui::ScrollArea::both().max_height(height).show(ui, |ui| {
                     let mut upload_target = None;
                     let mut download_target = None;
 
-                    for item in &mut self.skills_list {
-                        ui.horizontal(|ui| {
-                            ui.allocate_ui(Vec2::new(30.0, 24.0), |ui| {
+                    egui::Grid::new("skills_table_grid")
+                        .striped(true)
+                        .spacing(Vec2::new(16.0, 10.0))
+                        .min_col_width(20.0)
+                        .show(ui, |ui| {
+                            // Header
+                            ui.label("");
+                            ui.label(RichText::new("Skill 名称").strong().color(BLUE_ACCENT));
+                            ui.label(RichText::new("功能描述").strong().color(TEXT_COLOR));
+                            ui.label(RichText::new("本地状态 (Windows)").strong().color(TEXT_COLOR));
+                            ui.label(RichText::new("云端状态 (10.69.211.84)").strong().color(TEXT_COLOR));
+                            ui.label(RichText::new("单个操作").strong().color(TEXT_COLOR));
+                            ui.end_row();
+
+                            for item in &mut self.skills_list {
+                                // Col 0: Checkbox
                                 ui.checkbox(&mut item.is_selected, "");
-                            });
-                            ui.allocate_ui(Vec2::new(180.0, 24.0), |ui| {
-                                ui.label(RichText::new(&item.name).strong());
-                            });
-                            ui.allocate_ui(Vec2::new(260.0, 24.0), |ui| {
-                                ui.label(RichText::new(&item.description).color(MUTED_COLOR));
-                            });
-                            ui.allocate_ui(Vec2::new(140.0, 24.0), |ui| {
-                                let color = if item.is_local { GREEN_ACCENT } else { MUTED_COLOR };
-                                ui.label(RichText::new(item.local_status_text()).color(color).strong());
-                            });
-                            ui.allocate_ui(Vec2::new(140.0, 24.0), |ui| {
-                                let color = if item.is_remote { BLUE_ACCENT } else { MUTED_COLOR };
-                                ui.label(RichText::new(item.remote_status_text()).color(color).strong());
-                            });
-                            ui.allocate_ui(Vec2::new(140.0, 24.0), |ui| {
+
+                                // Col 1: Skill Name
+                                ui.label(RichText::new(&item.name).strong().color(TEXT_COLOR));
+
+                                // Col 2: Description (truncated + hover tooltip)
+                                ui.allocate_ui_with_layout(Vec2::new(320.0, 22.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                                    ui.add(egui::Label::new(RichText::new(&item.description).color(MUTED_COLOR)).truncate())
+                                        .on_hover_text(&item.description);
+                                });
+
+                                // Col 3: Local Status
+                                let local_color = if item.is_local { GREEN_ACCENT } else { MUTED_COLOR };
+                                ui.label(RichText::new(item.local_status_text()).color(local_color).strong());
+
+                                // Col 4: Remote Status
+                                let remote_color = if item.is_remote { BLUE_ACCENT } else { MUTED_COLOR };
+                                ui.label(RichText::new(item.remote_status_text()).color(remote_color).strong());
+
+                                // Col 5: Actions
                                 ui.horizontal(|ui| {
                                     if ui.add_enabled(item.can_upload(), egui::Button::new(RichText::new("📤 上传").color(TEXT_COLOR).size(11.0)).fill(BTN_BG).stroke(Stroke::new(1.0, CARD_BORDER))).clicked() {
                                         upload_target = Some(item.name.clone());
@@ -642,10 +647,10 @@ impl OmpSyncApp {
                                         download_target = Some(item.name.clone());
                                     }
                                 });
-                            });
+
+                                ui.end_row();
+                            }
                         });
-                        ui.separator();
-                    }
 
                     if let Some(target) = upload_target {
                         let _ = self.task_tx.send(BgTask::UploadSkill {
