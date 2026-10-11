@@ -2,6 +2,7 @@
 target/
 **/*.rs.bk
 Cargo.lock
+*.exe
 
 # .NET legacy artifacts
 bin/
