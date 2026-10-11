@@ -74,7 +74,8 @@ pub struct OmpSyncApp {
 
 impl OmpSyncApp {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        // Apply custom dark theme
+        setup_custom_fonts(&cc.egui_ctx);
+
         let mut visuals = egui::Visuals::dark();
         visuals.override_text_color = Some(TEXT_COLOR);
         visuals.panel_fill = BG_COLOR;
@@ -981,4 +982,86 @@ fn handle_bg_task(task: BgTask, sender: &Sender<BgResult>) {
             });
         }
     }
+}
+
+fn setup_custom_fonts(ctx: &egui::Context) {
+    let mut fonts = egui::FontDefinitions::default();
+
+    let windir = std::env::var("WINDIR").or_else(|_| std::env::var("SystemRoot")).unwrap_or_else(|_| "C:\\Windows".to_string());
+    let win_fonts = PathBuf::from(windir).join("Fonts");
+
+    let mut cjk_candidates = vec![
+        win_fonts.join("msyh.ttc"),
+        win_fonts.join("msyh.ttf"),
+        win_fonts.join("simhei.ttf"),
+        win_fonts.join("simsun.ttc"),
+        win_fonts.join("deng.ttf"),
+        PathBuf::from("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"),
+        PathBuf::from("/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc"),
+        PathBuf::from("/usr/share/fonts/truetype/wqy/wqy-microhei.ttc"),
+        PathBuf::from("/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc"),
+        PathBuf::from("/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf"),
+    ];
+
+    if let Ok(local_app) = std::env::var("LOCALAPPDATA") {
+        let user_fonts = PathBuf::from(local_app).join("Microsoft").join("Windows").join("Fonts");
+        cjk_candidates.push(user_fonts.join("msyh.ttc"));
+        cjk_candidates.push(user_fonts.join("simhei.ttf"));
+    }
+
+    for path in &cjk_candidates {
+        if let Ok(bytes) = fs::read(path) {
+            fonts.font_data.insert(
+                "cjk_fallback".to_owned(),
+                egui::FontData::from_owned(bytes),
+            );
+            if let Some(vec) = fonts.families.get_mut(&egui::FontFamily::Proportional) {
+                vec.push("cjk_fallback".to_owned());
+            }
+            if let Some(vec) = fonts.families.get_mut(&egui::FontFamily::Monospace) {
+                vec.push("cjk_fallback".to_owned());
+            }
+            break;
+        }
+    }
+    let emoji_candidates = [
+        r"C:\Windows\Fonts\seguiemj.ttf",
+        r"C:\Windows\Fonts\seguisym.ttf",
+        "/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf",
+        "/usr/share/fonts/noto/NotoColorEmoji.ttf",
+    ];
+
+    for path in &emoji_candidates {
+        if let Ok(bytes) = fs::read(path) {
+            fonts.font_data.insert(
+                "emoji_fallback".to_owned(),
+                egui::FontData::from_owned(bytes),
+            );
+            if let Some(vec) = fonts.families.get_mut(&egui::FontFamily::Proportional) {
+                vec.push("emoji_fallback".to_owned());
+            }
+            if let Some(vec) = fonts.families.get_mut(&egui::FontFamily::Monospace) {
+                vec.push("emoji_fallback".to_owned());
+            }
+            break;
+        }
+    }
+
+    ctx.set_fonts(fonts);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_font_setup() {
+        let ctx = egui::Context::default();
+        setup_custom_fonts(&ctx);
+        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+            let galley = ctx.fonts(|f| f.layout_no_wrap("🛡️ 配置文件同步 📥 拉取 📤 推送".to_string(), egui::FontId::proportional(14.0), egui::Color32::WHITE));
+            assert!(galley.size().x > 0.0);
+            println!("Galley rendered width (with emojis): {}", galley.size().x);
+        });
+}
 }
