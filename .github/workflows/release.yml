@@ -1,0 +1,98 @@
+name: Build and Release
+
+on:
+  push:
+    branches: [ "main", "master" ]
+    tags: [ "v*" ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build Windows Binary
+        run: cargo build --release
+      - name: Package Windows Zip
+        run: |
+          mkdir -p dist/omp-sync-client-windows-x64
+          cp target/release/omp-sync-client.exe dist/omp-sync-client-windows-x64/
+          cp README.md dist/omp-sync-client-windows-x64/
+          cp run.bat dist/omp-sync-client-windows-x64/
+          Compress-Archive -Path dist/omp-sync-client-windows-x64/* -DestinationPath dist/omp-sync-client-windows-x64.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64
+          path: dist/omp-sync-client-windows-x64.zip
+
+  build-ubuntu:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev
+      - name: Build Linux Binary
+        run: cargo build --release
+      - name: Package Ubuntu (.deb & .tar.gz)
+        run: |
+          mkdir -p dist/deb/usr/bin dist/deb/DEBIAN dist/deb/usr/share/applications
+          cp target/release/omp-sync-client dist/deb/usr/bin/
+          chmod +x dist/deb/usr/bin/omp-sync-client
+
+          cat << 'EOF' > dist/deb/DEBIAN/control
+          Package: omp-sync-client
+          Version: 1.0.0
+          Section: utils
+          Priority: optional
+          Architecture: amd64
+          Maintainer: yanzhe-Xiao <xyzxyzxyz6688@gmail.com>
+          Description: OMP Multi-Server Config and Skill Bi-directional Sync Client
+          EOF
+
+          cat << 'EOF' > dist/deb/usr/share/applications/omp-sync-client.desktop
+          [Desktop Entry]
+          Name=OMP Sync Client
+          Comment=OMP Configuration and Skill Syncer
+          Exec=/usr/bin/omp-sync-client
+          Icon=system-software-update
+          Terminal=false
+          Type=Application
+          Categories=Utility;Development;
+          EOF
+
+          dpkg-deb --build dist/deb dist/omp-sync-client_1.0.0_amd64.deb
+
+          mkdir -p dist/omp-sync-client-linux-x64
+          cp target/release/omp-sync-client dist/omp-sync-client-linux-x64/
+          cp README.md dist/omp-sync-client-linux-x64/
+          tar -czf dist/omp-sync-client-linux-x64.tar.gz -C dist omp-sync-client-linux-x64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ubuntu-deb
+          path: dist/omp-sync-client_1.0.0_amd64.deb
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-tarball
+          path: dist/omp-sync-client-linux-x64.tar.gz
+
+  release:
+    needs: [build-windows, build-ubuntu]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            windows-x64/omp-sync-client-windows-x64.zip
+            ubuntu-deb/omp-sync-client_1.0.0_amd64.deb
+            linux-tarball/omp-sync-client-linux-x64.tar.gz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

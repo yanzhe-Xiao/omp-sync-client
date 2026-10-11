@@ -1,0 +1,20 @@
+# Rust build artifacts
+target/
+**/*.rs.bk
+Cargo.lock
+
+# .NET legacy artifacts
+bin/
+obj/
+publish/
+*.user
+*.suo
+
+# Local logs & caches
+.local_shell_path.txt
+*.bak
+dist/
+*.tmp
+*.zip
+*.deb
+*.tar.gz
