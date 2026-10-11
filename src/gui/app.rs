@@ -14,11 +14,13 @@ use crate::core::skills::{merge_skills, scan_local_skills, SkillItem};
 const BG_COLOR: Color32 = Color32::from_rgb(15, 17, 23);
 const CARD_BG: Color32 = Color32::from_rgb(22, 27, 34);
 const CARD_BORDER: Color32 = Color32::from_rgb(48, 54, 61);
+const CODE_BG: Color32 = Color32::from_rgb(13, 17, 23);
 const TEXT_COLOR: Color32 = Color32::from_rgb(230, 237, 243);
 const MUTED_COLOR: Color32 = Color32::from_rgb(139, 148, 158);
 const BLUE_ACCENT: Color32 = Color32::from_rgb(88, 166, 255);
 const GREEN_ACCENT: Color32 = Color32::from_rgb(63, 185, 80);
 const RED_ACCENT: Color32 = Color32::from_rgb(248, 81, 73);
+const BTN_BG: Color32 = Color32::from_rgb(33, 38, 45);
 const BTN_PRIMARY: Color32 = Color32::from_rgb(31, 111, 235);
 const BTN_SUCCESS: Color32 = Color32::from_rgb(35, 134, 54);
 
@@ -75,13 +77,7 @@ pub struct OmpSyncApp {
 impl OmpSyncApp {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         setup_custom_fonts(&cc.egui_ctx);
-
-        let mut visuals = egui::Visuals::dark();
-        visuals.override_text_color = Some(TEXT_COLOR);
-        visuals.panel_fill = BG_COLOR;
-        visuals.window_fill = BG_COLOR;
-        visuals.selection.bg_fill = BLUE_ACCENT;
-        cc.egui_ctx.set_visuals(visuals);
+        apply_dark_theme(&cc.egui_ctx);
 
         let (task_tx, task_rx) = channel::<BgTask>();
         let (result_tx, result_rx) = channel::<BgResult>();
@@ -230,6 +226,7 @@ impl OmpSyncApp {
 
 impl eframe::App for OmpSyncApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        apply_dark_theme(ctx);
         self.process_bg_results();
 
         egui::CentralPanel::default().show(ctx, |ui| {
@@ -243,15 +240,25 @@ impl eframe::App for OmpSyncApp {
                 .inner_margin(10.0)
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
-                        ui.label(RichText::new("Master 云端服务器:").strong());
-                        let edit = ui.add(egui::TextEdit::singleline(&mut self.server_url).desired_width(320.0));
-                        if edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                            let _ = self.task_tx.send(BgTask::TestConnection {
-                                server_url: self.server_url.clone(),
+                        ui.label(RichText::new("Master 云端服务器:").strong().color(TEXT_COLOR));
+                        egui::Frame::none()
+                            .fill(CODE_BG)
+                            .stroke(Stroke::new(1.0, CARD_BORDER))
+                            .rounding(4.0)
+                            .inner_margin(egui::Margin::symmetric(8.0, 4.0))
+                            .show(ui, |ui| {
+                                let edit = ui.add(egui::TextEdit::singleline(&mut self.server_url)
+                                    .frame(false)
+                                    .text_color(TEXT_COLOR)
+                                    .desired_width(320.0));
+                                if edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                                    let _ = self.task_tx.send(BgTask::TestConnection {
+                                        server_url: self.server_url.clone(),
+                                    });
+                                }
                             });
-                        }
 
-                        if ui.button(RichText::new("测试连接").strong()).clicked() {
+                        if ui.add(egui::Button::new(RichText::new("测试连接").strong().color(TEXT_COLOR)).fill(BTN_BG).stroke(Stroke::new(1.0, CARD_BORDER))).clicked() {
                             self.log(&format!("正在测试与 {} 的连接...", self.server_url));
                             let _ = self.task_tx.send(BgTask::TestConnection {
                                 server_url: self.server_url.clone(),
@@ -276,17 +283,33 @@ impl eframe::App for OmpSyncApp {
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
                         ui.label(RichText::new("🛡️ 平台路径隔离保护:").strong().color(BLUE_ACCENT));
-                        ui.label(RichText::new(&self.detected_bash).color(GREEN_ACCENT).monospace());
+                        ui.label(RichText::new(&self.detected_bash).color(Color32::from_rgb(126, 231, 135)).monospace().strong());
                         ui.label(RichText::new("(上传自动剔除，拉取自动注入)").size(11.0).color(MUTED_COLOR));
                     });
                 });
 
             // 3. MAIN TABS
             ui.horizontal(|ui| {
-                if ui.selectable_label(self.active_tab == ActiveTab::ConfigSync, RichText::new("📝 配置文件同步 (config.yml / models.yml)").strong()).clicked() {
+                let tab_btn = |ui: &mut egui::Ui, is_active: bool, title: &str| -> egui::Response {
+                    let (bg, border, text_color) = if is_active {
+                        (Color32::from_rgb(28, 33, 40), Color32::from_rgb(56, 139, 253), BLUE_ACCENT)
+                    } else {
+                        (CARD_BG, CARD_BORDER, MUTED_COLOR)
+                    };
+                    egui::Frame::none()
+                        .fill(bg)
+                        .stroke(Stroke::new(1.0, border))
+                        .rounding(egui::Rounding { nw: 6.0, ne: 6.0, sw: 0.0, se: 0.0 })
+                        .inner_margin(egui::Margin::symmetric(14.0, 7.0))
+                        .show(ui, |ui| {
+                            ui.label(RichText::new(title).strong().size(13.5).color(text_color))
+                        }).response
+                };
+
+                if tab_btn(ui, self.active_tab == ActiveTab::ConfigSync, "📝 配置文件同步 (config.yml / models.yml)").interact(egui::Sense::click()).clicked() {
                     self.active_tab = ActiveTab::ConfigSync;
                 }
-                if ui.selectable_label(self.active_tab == ActiveTab::SkillsSync, RichText::new("🧩 技能选择性同步 (Skills 管理)").strong()).clicked() {
+                if tab_btn(ui, self.active_tab == ActiveTab::SkillsSync, "🧩 技能选择性同步 (Skills 管理)").interact(egui::Sense::click()).clicked() {
                     self.active_tab = ActiveTab::SkillsSync;
                 }
             });
@@ -312,19 +335,27 @@ impl eframe::App for OmpSyncApp {
                     ui.horizontal(|ui| {
                         ui.label(RichText::new("📜 实时操作日志").strong().color(MUTED_COLOR));
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if ui.button("清空日志").clicked() {
+                            if ui.add(egui::Button::new(RichText::new("清空日志").color(TEXT_COLOR).size(11.0)).fill(BTN_BG).stroke(Stroke::new(1.0, CARD_BORDER))).clicked() {
                                 self.logs.clear();
                             }
                         });
                     });
 
-                    egui::ScrollArea::vertical()
-                        .max_height(120.0)
-                        .stick_to_bottom(true)
+                    ui.add_space(4.0);
+                    egui::Frame::none()
+                        .fill(CODE_BG)
+                        .stroke(Stroke::new(1.0, CARD_BORDER))
+                        .rounding(4.0)
+                        .inner_margin(8.0)
                         .show(ui, |ui| {
-                            for line in &self.logs {
-                                ui.label(RichText::new(line).monospace().size(11.5).color(TEXT_COLOR));
-                            }
+                            egui::ScrollArea::vertical()
+                                .max_height(110.0)
+                                .stick_to_bottom(true)
+                                .show(ui, |ui| {
+                                    for line in &self.logs {
+                                        ui.label(RichText::new(line).monospace().size(12.0).color(Color32::from_rgb(201, 209, 217)));
+                                    }
+                                });
                         });
                 });
         });
@@ -358,10 +389,10 @@ impl OmpSyncApp {
             .inner_margin(8.0)
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new("当前编辑文件:").color(MUTED_COLOR));
+                    ui.label(RichText::new("当前编辑文件:").color(MUTED_COLOR).strong());
                     let old_file = self.active_file.clone();
-                    ui.radio_value(&mut self.active_file, ActiveConfigFile::ConfigYml, "config.yml (模型角色/主题/思考级别)");
-                    ui.radio_value(&mut self.active_file, ActiveConfigFile::ModelsYml, "models.yml (自定义 API Key 与模型)");
+                    ui.radio_value(&mut self.active_file, ActiveConfigFile::ConfigYml, RichText::new("config.yml (模型角色/主题/思考级别)").color(TEXT_COLOR).strong());
+                    ui.radio_value(&mut self.active_file, ActiveConfigFile::ModelsYml, RichText::new("models.yml (自定义 API Key 与模型)").color(TEXT_COLOR).strong());
 
                     if old_file != self.active_file {
                         self.load_local_file();
@@ -372,10 +403,10 @@ impl OmpSyncApp {
                     }
 
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.button(RichText::new("🔍 比对差异").strong()).clicked() {
+                        if ui.add(egui::Button::new(RichText::new("🔍 比对差异").color(TEXT_COLOR).strong()).fill(BTN_BG).stroke(Stroke::new(1.0, CARD_BORDER))).clicked() {
                             self.run_diff();
                         }
-                        if ui.button(RichText::new("📤 推送两者 (Both)").strong()).clicked() {
+                        if ui.add(egui::Button::new(RichText::new("📤 推送两者 (Both)").color(TEXT_COLOR).strong()).fill(BTN_BG).stroke(Stroke::new(1.0, CARD_BORDER))).clicked() {
                             self.log("==================================================");
                             self.log("开始一键推送全部配置至云端 (config.yml + models.yml)...");
                             let agent_dir = get_agent_dir();
@@ -393,7 +424,7 @@ impl OmpSyncApp {
                                 local_models: models_content,
                             });
                         }
-                        if ui.button(RichText::new("📥 拉取两者 (Both)").strong()).clicked() {
+                        if ui.add(egui::Button::new(RichText::new("📥 拉取两者 (Both)").color(TEXT_COLOR).strong()).fill(BTN_BG).stroke(Stroke::new(1.0, CARD_BORDER))).clicked() {
                             self.log("==================================================");
                             self.log("开始一键从云端拉取全部配置 (config.yml + models.yml)...");
                             let _ = self.task_tx.send(BgTask::PullBoth {
@@ -437,17 +468,27 @@ impl OmpSyncApp {
                         ui.horizontal(|ui| {
                             ui.label(RichText::new(format!("💻 本机配置 ({})", self.active_file_key())).strong().color(BLUE_ACCENT));
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                if ui.button("刷新本地").clicked() {
+                                if ui.add(egui::Button::new(RichText::new("刷新本地").color(TEXT_COLOR).size(11.0)).fill(BTN_BG).stroke(Stroke::new(1.0, CARD_BORDER))).clicked() {
                                     self.load_local_file();
                                 }
                             });
                         });
-                        egui::ScrollArea::vertical().max_height(height - 40.0).show(ui, |ui| {
-                            ui.add(egui::TextEdit::multiline(&mut self.local_config_text)
-                                .font(egui::TextStyle::Monospace)
-                                .desired_width(f32::INFINITY)
-                                .desired_rows(16));
-                        });
+                        ui.add_space(4.0);
+                        egui::Frame::none()
+                            .fill(CODE_BG)
+                            .stroke(Stroke::new(1.0, CARD_BORDER))
+                            .rounding(4.0)
+                            .inner_margin(8.0)
+                            .show(ui, |ui| {
+                                egui::ScrollArea::vertical().max_height(height - 50.0).show(ui, |ui| {
+                                    ui.add(egui::TextEdit::multiline(&mut self.local_config_text)
+                                        .frame(false)
+                                        .text_color(TEXT_COLOR)
+                                        .font(egui::TextStyle::Monospace)
+                                        .desired_width(f32::INFINITY)
+                                        .desired_rows(16));
+                                });
+                            });
                     });
             });
 
@@ -462,7 +503,7 @@ impl OmpSyncApp {
                         ui.horizontal(|ui| {
                             ui.label(RichText::new(format!("☁️ 云端 Master 配置 ({})", self.active_file_key())).strong().color(GREEN_ACCENT));
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                if ui.button("刷新云端").clicked() {
+                                if ui.add(egui::Button::new(RichText::new("刷新云端").color(TEXT_COLOR).size(11.0)).fill(BTN_BG).stroke(Stroke::new(1.0, CARD_BORDER))).clicked() {
                                     let key = self.active_file_key().to_string();
                                     let _ = self.task_tx.send(BgTask::RefreshRemoteFile {
                                         server_url: self.server_url.clone(),
@@ -471,12 +512,22 @@ impl OmpSyncApp {
                                 }
                             });
                         });
-                        egui::ScrollArea::vertical().max_height(height - 40.0).show(ui, |ui| {
-                            ui.add(egui::TextEdit::multiline(&mut self.remote_config_text)
-                                .font(egui::TextStyle::Monospace)
-                                .desired_width(f32::INFINITY)
-                                .desired_rows(16));
-                        });
+                        ui.add_space(4.0);
+                        egui::Frame::none()
+                            .fill(CODE_BG)
+                            .stroke(Stroke::new(1.0, CARD_BORDER))
+                            .rounding(4.0)
+                            .inner_margin(8.0)
+                            .show(ui, |ui| {
+                                egui::ScrollArea::vertical().max_height(height - 50.0).show(ui, |ui| {
+                                    ui.add(egui::TextEdit::multiline(&mut self.remote_config_text)
+                                        .frame(false)
+                                        .text_color(TEXT_COLOR)
+                                        .font(egui::TextStyle::Monospace)
+                                        .desired_width(f32::INFINITY)
+                                        .desired_rows(16));
+                                });
+                            });
                     });
             });
         });
@@ -491,18 +542,18 @@ impl OmpSyncApp {
             .inner_margin(8.0)
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    if ui.button("🔄 刷新列表").clicked() {
+                    if ui.add(egui::Button::new(RichText::new("🔄 刷新列表").color(TEXT_COLOR)).fill(BTN_BG).stroke(Stroke::new(1.0, CARD_BORDER))).clicked() {
                         let _ = self.task_tx.send(BgTask::RefreshSkills {
                             server_url: self.server_url.clone(),
                             skills_dir: get_skills_dir(),
                         });
                     }
-                    if ui.button("☑️ 全选").clicked() {
+                    if ui.add(egui::Button::new(RichText::new("☑️ 全选").color(TEXT_COLOR)).fill(BTN_BG).stroke(Stroke::new(1.0, CARD_BORDER))).clicked() {
                         for item in &mut self.skills_list {
                             item.is_selected = true;
                         }
                     }
-                    if ui.button("⬜ 全不选").clicked() {
+                    if ui.add(egui::Button::new(RichText::new("⬜ 全不选").color(TEXT_COLOR)).fill(BTN_BG).stroke(Stroke::new(1.0, CARD_BORDER))).clicked() {
                         for item in &mut self.skills_list {
                             item.is_selected = false;
                         }
@@ -584,10 +635,10 @@ impl OmpSyncApp {
                             });
                             ui.allocate_ui(Vec2::new(140.0, 24.0), |ui| {
                                 ui.horizontal(|ui| {
-                                    if ui.add_enabled(item.can_upload(), egui::Button::new("📤 上传")).clicked() {
+                                    if ui.add_enabled(item.can_upload(), egui::Button::new(RichText::new("📤 上传").color(TEXT_COLOR).size(11.0)).fill(BTN_BG).stroke(Stroke::new(1.0, CARD_BORDER))).clicked() {
                                         upload_target = Some(item.name.clone());
                                     }
-                                    if ui.add_enabled(item.can_download(), egui::Button::new("📥 下载")).clicked() {
+                                    if ui.add_enabled(item.can_download(), egui::Button::new(RichText::new("📥 下载").color(TEXT_COLOR).size(11.0)).fill(BTN_BG).stroke(Stroke::new(1.0, CARD_BORDER))).clicked() {
                                         download_target = Some(item.name.clone());
                                     }
                                 });
@@ -982,6 +1033,36 @@ fn handle_bg_task(task: BgTask, sender: &Sender<BgResult>) {
             });
         }
     }
+}
+
+pub fn apply_dark_theme(ctx: &egui::Context) {
+    let mut visuals = egui::Visuals::dark();
+    visuals.dark_mode = true;
+    visuals.panel_fill = BG_COLOR;
+    visuals.window_fill = CARD_BG;
+    visuals.extreme_bg_color = CODE_BG;
+    visuals.code_bg_color = CODE_BG;
+    visuals.override_text_color = Some(TEXT_COLOR);
+
+    visuals.widgets.noninteractive.bg_fill = CARD_BG;
+    visuals.widgets.noninteractive.fg_stroke = Stroke::new(1.0, TEXT_COLOR);
+    visuals.widgets.noninteractive.bg_stroke = Stroke::new(1.0, CARD_BORDER);
+
+    visuals.widgets.inactive.bg_fill = BTN_BG;
+    visuals.widgets.inactive.fg_stroke = Stroke::new(1.0, TEXT_COLOR);
+    visuals.widgets.inactive.bg_stroke = Stroke::new(1.0, CARD_BORDER);
+
+    visuals.widgets.hovered.bg_fill = CARD_BORDER;
+    visuals.widgets.hovered.fg_stroke = Stroke::new(1.0, Color32::WHITE);
+    visuals.widgets.hovered.bg_stroke = Stroke::new(1.0, BLUE_ACCENT);
+
+    visuals.widgets.active.bg_fill = BTN_PRIMARY;
+    visuals.widgets.active.fg_stroke = Stroke::new(1.0, Color32::WHITE);
+
+    visuals.selection.bg_fill = Color32::from_rgb(26, 79, 160);
+    visuals.selection.stroke = Stroke::new(1.0, BLUE_ACCENT);
+
+    ctx.set_visuals(visuals);
 }
 
 fn setup_custom_fonts(ctx: &egui::Context) {
